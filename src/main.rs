@@ -1,65 +1,23 @@
-use chrono::{self, Local};
 use core::panic;
 use std::{
-    env::{self, current_dir},
-    error::{self, Error},
-    fmt::format,
+    env,
     fs::{self, File, OpenOptions},
     io::{Read, Write},
     path::{Path, PathBuf},
     process::exit,
-    str::FromStr,
-    time,
 };
 
-use clap::{arg, command, Arg, ArgMatches, Command};
+mod clapArgs;
+use clapArgs::clap_args::setup_cli_args;
+
+use chrono::{self, Local};
+use edit_distance::edit_distance;
 use homedir::get_my_home;
 
+use clap::{ArgMatches, Command};
+
 fn main() {
-    let result = command!()
-        .about("This CLI-Tool is to manage Todos. It can be used for global todos in your home dir or in your current working dir.")
-        .arg(Arg::new("global").short('g').long("global").required(false).num_args(0).help("use todo in home folder"))
-        .subcommands([
-            Command::new("create").arg(
-                Arg::new("config_file")
-                    .short('c')
-                    .long("config")
-                    .alias("configfile")
-                    .num_args(1)
-                    .required(false)
-                    .help("creates a copy of the given config_file to use in this todo."),
-            ),
-            Command::new("clear").alias("c"),
-            Command::new("open").alias("o"),
-            Command::new("config").alias("conf").subcommands([
-                Command::new("name").arg(
-                    Arg::new("new_name")
-                        .aliases(["newname", "name"])
-                        .help("this name is written beside the todo to track it.")
-                        .required(false),
-                ),
-                Command::new("deleted")
-                    .alias("delete")
-                    .arg(Arg::new("delete_methode").help("deletemethode: in_file/delete\nin_file saves deleted todos in .todo.deleted\ndelete doesn't save deleted todos").required(false)),
-            ]),
-            Command::new("delete").arg(Arg::new("index").required(false)),
-            Command::new("add").args([
-                Arg::new("description").required(true),
-                Arg::new("due_date")
-                    .short('d')
-                    .long("due-date")
-                    .aliases(["duedate"])
-                    .required(false),
-                Arg::new("due_time")
-                    .short('t')
-                    .long("due-time")
-                    .aliases(["duetime"])
-                    .required(false),
-            ]),
-            Command::new("list").alias("ls"),
-            Command::new("finish").arg(Arg::new("index")),
-        ])
-        .get_matches();
+    let result = setup_cli_args();
 
     // println!("{}", result.get_one::<bool>("global").unwrap());
 
@@ -95,11 +53,81 @@ fn main() {
         println!("delete");
     }
     if let Some(config_args) = result.subcommand_matches("config") {
-        println!("config");
+        handle_config(config_args);
+        exit(0);
     }
     if let Some(clear_args) = result.subcommand_matches("clear") {
         println!("clear");
     }
+}
+
+fn handle_config(config_args: &ArgMatches) {
+    let current_dir = get_current_working_dir().unwrap();
+    let mut config_path = current_dir.clone();
+    config_path.push(".todo.config");
+
+    if !config_path.exists() {
+        println!("config doesn't exist in: {}", config_path.to_string_lossy());
+        return;
+    }
+
+    if let Some(name_args) = config_args.subcommand_matches("name") {
+        let name_value = name_args.get_one::<String>("new_name").unwrap();
+
+        let mut content = String::new();
+        if let Ok(mut file) = OpenOptions::new().read(true).open(config_path.clone()) {
+            file.read_to_string(&mut content).unwrap();
+        }
+
+        let mut content_lines: Vec<&str> = content.lines().collect();
+        content_lines.remove(0);
+        content_lines.insert(0, name_value);
+        let mut file = OpenOptions::new().write(true).open(config_path).unwrap();
+        for line in content_lines {
+            file.write_all(format!("{}\n", line).as_bytes()).unwrap();
+        }
+        return;
+    }
+
+    if let Some(deleted_args) = config_args.subcommand_matches("deleted") {
+        let deleted_value = deleted_args.get_one::<String>("delete_methode").unwrap();
+
+        let mut content = String::new();
+        if let Ok(mut file) = OpenOptions::new().read(true).open(config_path.clone()) {
+            file.read_to_string(&mut content).unwrap();
+        }
+
+        let mut content_lines: Vec<&str> = content.lines().collect();
+        content_lines.remove(1);
+        let deleted_parsed_value = parse_deleted_value(deleted_value);
+        content_lines.insert(1, &deleted_parsed_value);
+        let mut file = OpenOptions::new().write(true).open(config_path).unwrap();
+        for line in content_lines {
+            file.write_all(format!("{}\n", line).as_bytes()).unwrap();
+        }
+        return;
+    }
+
+    let mut file = OpenOptions::new().read(true).open(config_path).unwrap();
+    let mut content = String::new();
+    file.read_to_string(&mut content).unwrap();
+    println!("current config:");
+    for line in content.lines() {
+        println!("\t{}", line);
+    }
+
+    #[warn(clippy::needless_return)]
+    return;
+}
+
+fn parse_deleted_value(deleted_value: &str) -> String {
+    let in_file_distance = edit_distance(deleted_value, "in_file");
+    let delete_distance = edit_distance(deleted_value, "delete");
+
+    if in_file_distance < delete_distance {
+        return "in_file".to_string();
+    }
+    return "delete".to_string();
 }
 
 fn handle_create(create_args: &ArgMatches) {
