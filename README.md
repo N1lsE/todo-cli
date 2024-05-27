@@ -24,7 +24,7 @@ CLI tool to manage todo's in project and global
 `todo clear` - asks and clears all `.todo.*` files
 
 `todo create` - creates `.todo.*` files with default config
-`todo create -c "config_file"` copys the config file
+`todo create -c "config_file"` copies the config file
 `todo create -c` ask questions to create config
 
 `-g` access global todo's (configs) in home directory
