@@ -24,7 +24,7 @@ pub mod file_handler {
     }
 
     // I got this staight from GPT4
-    // maby i dont know how it works but it looks kinda right
+    // maby i dont know how it works but it  kinda right
     pub fn remove_line(file: &PathBuf, index: usize) -> Result<(), String> {
         // Read lines into a buffer
         let input = fs::File::open(file).map_err(|e| format!("Failed to open the file: {}", e))?;
